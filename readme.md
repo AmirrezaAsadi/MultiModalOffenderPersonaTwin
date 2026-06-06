@@ -97,7 +97,7 @@ sequenceDiagram
 ## 3. Subsystem Specifications
 
 ### 1. Automatic Speech Recognition (STT)
-- **Model**: OpenAI's Whisper (`base` model).
+- **Model**: Local open-source Whisper (`base` model).
 - **Processing**: The raw audio bytes are received as WAV format over the WebSocket, dumped to a lightweight local temporary file, and processed within a Python thread pool to prevent blocking the async application event loop.
 
 ### 2. Large Language Model (LLM)
@@ -154,7 +154,8 @@ A key design highlight of the OffenderInteraction model is **real-time user inte
 ## 6. Features
 
 - **Interactive Real-Time Voice Twin**: High-frequency duplex communication via stateful WebSockets between browser client and server.
-- **Local Speech-to-Text (STT)**: Automated transcription using OpenAI's Whisper model (processed in thread-pools to keep execution async).
+- **Local Speech-to-Text (STT)**: Automated transcription using the local open-source **Whisper `base` model** (processed in thread-pools to keep execution async).
+- **Manual Input Control (No VAD)**: Utilizes a hold-to-talk (Push-to-Talk) capture mechanism rather than an automated Voice Activity Detection (VAD) model to reduce processing load. 
 - **Local Text-to-Speech (TTS)**:
   - **Preset Voices**: Fast audio generation using Kokoro ONNX.
   - **Voice Cloning**: Custom voice cloning powered by Qwen3-TTS using user-provided voice clips.
