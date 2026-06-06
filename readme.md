@@ -148,3 +148,33 @@ A key design highlight of the OffenderInteraction model is **real-time user inte
   - `{"type": "bot_text", "text": "..."}`: The text content of the sentence currently being spoken.
   - `{"type": "bot_speaking"}`: Alert to transition video element to the `talking_loop`.
   - `{"type": "bot_stopped"}`: Alert to transition video element to the `idle_loop`.
+
+---
+
+## 6. Features
+
+- **Interactive Real-Time Voice Twin**: High-frequency duplex communication via stateful WebSockets between browser client and server.
+- **Local Speech-to-Text (STT)**: Automated transcription using OpenAI's Whisper model (processed in thread-pools to keep execution async).
+- **Local Text-to-Speech (TTS)**:
+  - **Preset Voices**: Fast audio generation using Kokoro ONNX.
+  - **Voice Cloning**: Custom voice cloning powered by Qwen3-TTS using user-provided voice clips.
+- **Local Language Model (LLM)**: Offline LLM generation using Ollama (supporting Gemma, Ministral, DeepSeek, etc.).
+- **Pre-rendered Video Puppetry**: Renders breathing/idle loops and speech-synced talking loops offline via SadTalker to avoid dynamic rendering latency.
+- **Smart Interruption Engine**: Zero-lag client-driven audio clearing and backend task cancellation for realistic natural dialogue flow.
+- **Responsive  Web UI**: Bootstrap-designed interface featuring full voice recording buttons and live subtitles.
+
+---
+
+## 7. Completed Roadmap Items (Done)
+
+- [x] Initial FastAPI server scaffolding and templates mount (`app.py`).
+- [x] Persona configuration, JSON storage, and directory tracking (`persona_manager.py`).
+- [x] Offline video loops generator calling SadTalker CLI processes in background tasks.
+- [x] WebSocket messaging handler with connection manager and routing (`bot_pipeline.py`).
+- [x] Whisper STT integration with local base model.
+- [x] Ollama client connecting to local model services with sentence chunker logic.
+- [x] Kokoro ONNX engine integration for sub-second preset TTS streams.
+- [x] Qwen3-TTS cloning integration with audio reference loading.
+- [x] Client-side recording using HTML5 Media Devices (PCM mono WAV 16kHz).
+- [x] Web Audio API playback queue scheduler with 24kHz Int16 to Float32 converter.
+- [x] Immediate client-to-server interruption signaling and server-side task cancellation.
