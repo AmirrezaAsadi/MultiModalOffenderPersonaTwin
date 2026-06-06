@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persona Dashboard - MultiModalOffenderPersonaTwin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #121212; color: #ffffff; }
+        .card { background-color: #1e1e1e; color: #ffffff; border: 1px solid #333; }
+        .form-control { background-color: #2b2b2b; color: #fff; border: 1px solid #444; }
+        .form-control:focus { background-color: #333; color: #fff; }
+        .persona-img { width: 100%; height: 200px; object-fit: cover; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4 text-center">MultiModal Offender Persona Dashboard</h1>
+        
+        <div class="row mb-5">
+            <div class="col-md-6 offset-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h4 class="card-title">Create New Persona</h4>
+                        <form action="/create_persona" method="post" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Persona Name</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="system_prompt" class="form-label">System Prompt (Background/Crimes/Traits)</label>
+                                <textarea class="form-control" id="system_prompt" name="system_prompt" rows="4" required></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="photo" class="form-label">Mugshot / Photo</label>
+                                <input class="form-control" type="file" id="photo" name="photo" accept="image/*" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label d-block">Voice Source</label>
+                                <div class="d-flex gap-3 mb-2">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="voice_type" id="voice-type-preset" value="preset" checked onchange="toggleVoiceSource()">
+                                        <label class="form-check-label" for="voice-type-preset">Preset Voice (Instant)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="voice_type" id="voice-type-cloned" value="cloned" onchange="toggleVoiceSource()">
+                                        <label class="form-check-label" for="voice-type-cloned">Clone Voice (.wav Upload)</label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Preset Voice Selection -->
+                            <div id="preset-voice-group" class="mb-3">
+                                <label for="voice" class="form-label">Voice Accent & Tone</label>
+                                <div class="d-flex align-items-center gap-2">
+                                    <select class="form-select" id="voice" name="voice" style="background-color: #2b2b2b; color: #fff; border: 1px solid #444;" onchange="updateVoicePreview()">
+                                        <optgroup label="American (Female)">
+                                            <option value="af_bella" selected>Bella (Default - Soft)</option>
+                                            <option value="af_sarah">Sarah</option>
+                                            <option value="af_nicole">Nicole</option>
+                                            <option value="af_sky">Sky</option>
+                                        </optgroup>
+                                        <optgroup label="American (Male)">
+                                            <option value="am_adam">Adam</option>
+                                            <option value="am_michael">Michael</option>
+                                        </optgroup>
+                                        <optgroup label="British (Female)">
+                                            <option value="bf_emma">Emma</option>
+                                            <option value="bf_isabella">Isabella</option>
+                                        </optgroup>
+                                        <optgroup label="British (Male)">
+                                            <option value="bm_george">George</option>
+                                            <option value="bm_lewis">Lewis</option>
+                                        </optgroup>
+                                    </select>
+                                    <button type="button" class="btn btn-outline-info text-nowrap" id="play-preview-btn" onclick="playVoicePreview()">🔊 Play Sample</button>
+                                </div>
+                                <audio id="voice-preview-audio" style="display: none;"></audio>
+                            </div>
+                            
+                            <!-- Cloned Voice Upload -->
+                            <div id="cloned-voice-group" class="mb-3" style="display: none;">
+                                <label for="voice_file" class="form-label">Voice Reference File (.wav)</label>
+                                <input class="form-control" type="file" id="voice_file" name="voice_file" accept="audio/wav,audio/x-wav" style="background-color: #2b2b2b; color: #fff; border: 1px solid #444;">
+                                <small class="text-muted">Upload a clear 3–15 second WAV recording. Whisper will transcribe it automatically.</small>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100">Create Persona (Triggers SadTalker)</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="mb-3">Available Personas</h3>
+        <div class="row">
+            {% for persona in personas %}
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    <img src="/{{ persona.photo_path }}" class="card-img-top persona-img" alt="{{ persona.name }}">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ persona.name }}</h5>
+                        <p class="card-text text-muted">Status: {{ persona.status }}</p>
+                        {% if persona.status == 'ready' %}
+                        <a href="/chat/{{ persona.id }}" class="btn btn-success w-100">Start Interview</a>
+                        {% else %}
+                        <button class="btn btn-secondary w-100" disabled>Generating Video Loops...</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not personas %}
+            <div class="col-12 text-center text-muted">No personas created yet.</div>
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        const previewAudio = document.getElementById('voice-preview-audio');
+        const voiceSelect = document.getElementById('voice');
+        const playBtn = document.getElementById('play-preview-btn');
+
+        function updateVoicePreview() {
+            const voice = voiceSelect.value;
+            previewAudio.src = `/static/audio/samples/${voice}.wav`;
+            playBtn.innerText = "🔊 Play Sample";
+        }
+
+        function playVoicePreview() {
+            if (!previewAudio.src || previewAudio.src === window.location.href) {
+                updateVoicePreview();
+            }
+            
+            if (previewAudio.paused) {
+                previewAudio.play()
+                    .then(() => {
+                        playBtn.innerText = "⏹️ Stop Sample";
+                    })
+                    .catch(e => {
+                        console.error("Audio playback failed:", e);
+                        alert("Please wait a moment. The voice samples are being generated on the server.");
+                    });
+            } else {
+                previewAudio.pause();
+                previewAudio.currentTime = 0;
+                playBtn.innerText = "🔊 Play Sample";
+            }
+        }
+
+        previewAudio.onended = () => {
+            playBtn.innerText = "🔊 Play Sample";
+        };
+
+        function toggleVoiceSource() {
+            const isPreset = document.getElementById('voice-type-preset').checked;
+            document.getElementById('preset-voice-group').style.display = isPreset ? 'block' : 'none';
+            document.getElementById('cloned-voice-group').style.display = isPreset ? 'none' : 'block';
+            
+            // Set fields as required or optional based on selection
+            document.getElementById('voice_file').required = !isPreset;
+        }
+    </script>
+</body>
+</html>

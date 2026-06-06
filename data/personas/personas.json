@@ -1,0 +1,9 @@
+[
+    {
+        "id": "4ac847ea-6bcd-4a0c-940d-18b3134d1872",
+        "name": "Alice",
+        "system_prompt": "She is thief",
+        "photo_path": "data/personas/4ac847ea-6bcd-4a0c-940d-18b3134d1872/photo.jpg",
+        "status": "ready"
+    }
+]

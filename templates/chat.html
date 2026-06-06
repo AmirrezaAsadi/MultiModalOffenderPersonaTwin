@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview - {{ persona.name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #000; color: #fff; margin: 0; overflow: hidden; }
+        #video-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        video {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transition: opacity 0.2s ease-in-out;
+        }
+        #idle-video { opacity: 1; z-index: 1; }
+        #talking-video { opacity: 0; z-index: 2; }
+        
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            z-index: 10;
+            width: 100%;
+            text-align: center;
+        }
+        .btn-control {
+            border-radius: 50%;
+            width: 60px; height: 60px;
+            font-size: 24px;
+        }
+        #status-indicator {
+            position: absolute;
+            top: 20px; right: 20px;
+            z-index: 10;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+        .back-btn {
+            position: absolute;
+            top: 20px; left: 20px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="btn btn-outline-light back-btn">&larr; Back to Dashboard</a>
+    
+    <div id="status-indicator">Connecting to Pipecat...</div>
+
+    <div id="video-container">
+        <!-- We use the placeholder image if the videos aren't actually generated yet (in mock mode) -->
+        <video id="idle-video" loop muted playsinline poster="/{{ persona.photo_path }}">
+            <source src="/data/personas/{{ persona.id }}/idle_loop.mp4" type="video/mp4">
+        </video>
+        <video id="talking-video" loop muted playsinline poster="/{{ persona.photo_path }}">
+            <source src="/data/personas/{{ persona.id }}/talking_loop.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <div id="subtitle" style="position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); width: 80%; text-align: center; background: rgba(0,0,0,0.75); padding: 12px 24px; border-radius: 10px; font-size: 20px; color: #fff; z-index: 10; font-family: sans-serif; display: none;"></div>
+
+    <div id="controls">
+        <button id="mic-btn" class="btn btn-danger btn-control">🎤</button>
+    </div>
+
+    <script>
+        const personaId = "{{ persona.id }}";
+        const idleVideo = document.getElementById('idle-video');
+        const talkingVideo = document.getElementById('talking-video');
+        const statusIndicator = document.getElementById('status-indicator');
+        const micBtn = document.getElementById('mic-btn');
+        const subtitleEl = document.getElementById('subtitle');
+        
+        let ws;
+        let isRecording = false;
+
+        // Recording audio buffers
+        let audioContext;
+        let scriptProcessor;
+        let mediaStream;
+        let audioBuffers = [];
+
+        // Playback audio buffers
+        let playbackCtx;
+        let audioQueue = [];
+        let isPlaying = false;
+
+        // Try to play idle video immediately
+        idleVideo.play().catch(e => console.log("Autoplay blocked, waiting for user interaction."));
+
+        function toggleTalking(isTalking) {
+            if (isTalking) {
+                talkingVideo.style.opacity = 1;
+                idleVideo.style.opacity = 0;
+                talkingVideo.play();
+            } else {
+                talkingVideo.style.opacity = 0;
+                idleVideo.style.opacity = 1;
+                talkingVideo.pause();
+                talkingVideo.currentTime = 0;
+            }
+        }
+
+        function showSubtitle(text, duration = 4000) {
+            subtitleEl.innerText = text;
+            subtitleEl.style.display = "block";
+            // Auto hide user transcription after duration
+            if (duration) {
+                if (subtitleEl.timer) clearTimeout(subtitleEl.timer);
+                subtitleEl.timer = setTimeout(() => {
+                    subtitleEl.style.display = "none";
+                }, duration);
+            }
+        }
+
+        // Playback audio queue
+        function initPlayback() {
+            if (!playbackCtx) {
+                playbackCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            }
+        }
+
+        function playNextChunk() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                toggleTalking(false);
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "playback_finished" }));
+                }
+                return;
+            }
+            isPlaying = true;
+            toggleTalking(true);
+            let buffer = audioQueue.shift();
+            let source = playbackCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(playbackCtx.destination);
+            source.onended = playNextChunk;
+            source.start(0);
+        }
+
+        function interruptPlayback() {
+            audioQueue = [];
+            isPlaying = false;
+            toggleTalking(false);
+            if (playbackCtx) {
+                try {
+                    playbackCtx.close();
+                } catch(e) {}
+                playbackCtx = null;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "interrupt" }));
+            }
+        }
+
+        // Setup WebSocket to Backend
+        function setupWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat/${personaId}`);
+            
+            ws.onopen = () => {
+                statusIndicator.innerText = "Connecting to pipeline...";
+                statusIndicator.style.color = "#ffaa00";
+            };
+            
+            ws.onmessage = async (event) => {
+                if (event.data instanceof Blob) {
+                    // It's binary audio data!
+                    initPlayback();
+                    let arrayBuffer = await event.data.arrayBuffer();
+                    let int16Array = new Int16Array(arrayBuffer);
+                    let float32Array = new Float32Array(int16Array.length);
+                    for (let i = 0; i < int16Array.length; i++) {
+                        float32Array[i] = int16Array[i] / 32768.0;
+                    }
+                    let audioBuffer = playbackCtx.createBuffer(1, float32Array.length, 24000);
+                    audioBuffer.getChannelData(0).set(float32Array);
+                    
+                    audioQueue.push(audioBuffer);
+                    if (!isPlaying) {
+                        playNextChunk();
+                    }
+                } else {
+                    // It's JSON event
+                    const data = JSON.parse(event.data);
+                    if (data.type === "bot_ready") {
+                        statusIndicator.innerText = "Hold to Talk";
+                        statusIndicator.style.color = "#00ff00";
+                    } else if (data.type === "user_transcription") {
+                        showSubtitle(`You: "${data.text}"`, 4000);
+                    } else if (data.type === "bot_text") {
+                        showSubtitle(`${data.text}`, null); // Keeps bot subtitle on screen until next event
+                    } else if (data.type === "bot_speaking") {
+                        toggleTalking(true);
+                        statusIndicator.innerText = "Persona is speaking...";
+                    } else if (data.type === "bot_stopped") {
+                        toggleTalking(false);
+                        subtitleEl.style.display = "none";
+                        statusIndicator.innerText = "Hold to Talk";
+                    }
+                }
+            };
+            
+            ws.onclose = () => {
+                statusIndicator.innerText = "Disconnected";
+                statusIndicator.style.color = "#ff0000";
+                setTimeout(setupWebSocket, 3000); // Reconnect
+            };
+        }
+
+        // WAV Encoding Utility
+        function bufferToWav(buffer, sampleRate = 16000) {
+            let numOfChan = 1,
+                length = buffer.length * 2 + 44,
+                bufferArr = new ArrayBuffer(length),
+                view = new DataView(bufferArr),
+                pos = 0;
+
+            function setString(string) {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(pos + i, string.charCodeAt(i));
+                }
+                pos += string.length;
+            }
+
+            function setUint16(data) {
+                view.setUint16(pos, data, true);
+                pos += 2;
+            }
+
+            function setUint32(data) {
+                view.setUint32(pos, data, true);
+                pos += 4;
+            }
+
+            setString('RIFF');
+            setUint32(length - 8);
+            setString('WAVE');
+            setString('fmt ');
+            setUint32(16);
+            setUint16(1);
+            setUint16(numOfChan);
+            setUint32(sampleRate);
+            setUint32(sampleRate * 2);
+            setUint16(2);
+            setUint16(16);
+            setString('data');
+            setUint32(length - pos - 4);
+
+            for (let i = 0; i < buffer.length; i++) {
+                let sample = Math.max(-1, Math.min(1, buffer[i]));
+                sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                view.setInt16(pos, sample, true);
+                pos += 2;
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        // Recording implementation
+        async function startRecording() {
+            interruptPlayback();
+            audioBuffers = [];
+            
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const source = audioContext.createMediaStreamSource(mediaStream);
+            
+            scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+            scriptProcessor.onaudioprocess = (event) => {
+                const inputBuffer = event.inputBuffer.getChannelData(0);
+                audioBuffers.push(new Float32Array(inputBuffer));
+            };
+            
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+            
+            isRecording = true;
+            micBtn.classList.remove('btn-danger');
+            micBtn.classList.add('btn-success');
+            statusIndicator.innerText = "Listening...";
+            
+            idleVideo.play();
+        }
+
+        function stopRecording() {
+            if (scriptProcessor) {
+                scriptProcessor.disconnect();
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+
+            isRecording = false;
+            micBtn.classList.remove('btn-success');
+            micBtn.classList.add('btn-danger');
+            statusIndicator.innerText = "Processing voice...";
+
+            let totalLength = audioBuffers.reduce((acc, buf) => acc + buf.length, 0);
+            if (totalLength === 0) {
+                statusIndicator.innerText = "Hold to Talk";
+                return;
+            }
+            
+            let flattenedBuffer = new Float32Array(totalLength);
+            let offset = 0;
+            for (let buf of audioBuffers) {
+                flattenedBuffer.set(buf, offset);
+                offset += buf.length;
+            }
+            
+            let wavBlob = bufferToWav(flattenedBuffer, 16000);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(wavBlob);
+            }
+        }
+
+        async function handleStart() {
+            if (!isRecording) {
+                try {
+                    await startRecording();
+                } catch (e) {
+                    console.error("Error starting recording:", e);
+                    statusIndicator.innerText = "Error accessing mic";
+                }
+            }
+        }
+
+        function handleStop() {
+            if (isRecording) {
+                stopRecording();
+            }
+        }
+
+        // Desktop mouse events
+        micBtn.addEventListener('mousedown', async (e) => {
+            e.preventDefault();
+            await handleStart();
+        });
+        
+        micBtn.addEventListener('mouseup', (e) => {
+            e.preventDefault();
+            handleStop();
+        });
+        
+        micBtn.addEventListener('mouseleave', (e) => {
+            e.preventDefault();
+            handleStop();
+        });
+
+        // Mobile touch events
+        micBtn.addEventListener('touchstart', async (e) => {
+            e.preventDefault();
+            await handleStart();
+        }, { passive: false });
+        
+        micBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            handleStop();
+        }, { passive: false });
+        
+        micBtn.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            handleStop();
+        }, { passive: false });
+
+        setupWebSocket();
+    </script>
+</body>
+</html>
