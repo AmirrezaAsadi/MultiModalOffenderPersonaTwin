@@ -1,6 +1,6 @@
-# MultiModal Offender Persona Twin: OffenderInteraction SDD Specification
+# MultiModal Offender Persona Twin: OffenderInteraction  Specification
 
-This document defines the formal **Spec-Driven Development (SDD)** specification for the `OffenderInteraction` subsystem. Implementation must validate against these exact interfaces, schemas, states, and behavior requirements.
+specification for the `OffenderInteraction` subsystem. Implementation must validate against these exact interfaces, schemas, states, and behavior requirements.
 
 ---
 
